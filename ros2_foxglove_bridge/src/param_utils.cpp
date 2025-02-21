@@ -89,12 +89,25 @@ void declareParameters(rclcpp::Node* node) {
   bestEffortQosTopicWhiteListDescription.type =
     rcl_interfaces::msg::ParameterType::PARAMETER_STRING_ARRAY;
   bestEffortQosTopicWhiteListDescription.description =
-    "List of regular expressions (ECMAScript) for topics that should use be forced to use "
+    "List of regular expressions (ECMAScript) for topics that should be forced to use "
     "'best_effort' QoS. Unmatched topics will use 'reliable' QoS if ALL publishers are 'reliable', "
     "'best_effort' if any publishers are 'best_effort'.";
   bestEffortQosTopicWhiteListDescription.read_only = true;
   node->declare_parameter(PARAM_BEST_EFFORT_QOS_TOPIC_WHITELIST, std::vector<std::string>({"(?!)"}),
                           bestEffortQosTopicWhiteListDescription);
+
+  auto bestEffortQosSendBufferLimit = rcl_interfaces::msg::ParameterDescriptor{};
+  bestEffortQosSendBufferLimit.name = PARAM_BEST_EFFORT_QOS_SEND_BUFFER_LIMIT;
+  bestEffortQosSendBufferLimit.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
+  bestEffortQosSendBufferLimit.description =
+    "Connection send buffer limit in bytes for 'best_effort' messages";
+  bestEffortQosSendBufferLimit.read_only = true;
+  bestEffortQosSendBufferLimit.integer_range.resize(1);
+  bestEffortQosSendBufferLimit.integer_range[0].from_value = 0;
+  bestEffortQosSendBufferLimit.integer_range[0].to_value = std::numeric_limits<int64_t>::max();
+  bestEffortQosSendBufferLimit.read_only = true;
+  node->declare_parameter(PARAM_BEST_EFFORT_QOS_SEND_BUFFER_LIMIT, DEFAULT_SEND_BUFFER_LIMIT,
+                          bestEffortQosSendBufferLimit);
 
   auto topicWhiteListDescription = rcl_interfaces::msg::ParameterDescriptor{};
   topicWhiteListDescription.name = PARAM_TOPIC_WHITELIST;
