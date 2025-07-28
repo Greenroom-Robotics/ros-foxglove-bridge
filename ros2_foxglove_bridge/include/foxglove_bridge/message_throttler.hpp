@@ -69,7 +69,7 @@ public:
   bool shouldThrottle(const TopicName& topic, const rcl_serialized_message_t& serializedMsg,
                       const Nanoseconds now);
 
-  void eraseTopic(const TopicName& topic, const foxglove::ChannelId& channelId);
+  void eraseTopic(const TopicName& topic);
 
 private:
   std::unordered_map<TopicName, std::unique_ptr<ThrottledTopicInfo>> _throttledTopics;
