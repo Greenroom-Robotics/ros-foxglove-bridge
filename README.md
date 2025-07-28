@@ -88,6 +88,10 @@ Parameters are provided to configure the behavior of the bridge. These parameter
  * (ROS 2) __best_effort_qos_send_buffer_limit__: Connection send buffer limit in bytes for `best_effort` messages. Defaults to `10000000` (10 MB).
  * (ROS 2) __include_hidden__: Include hidden topics and services. Defaults to `false`.
  * (ROS 2) __disable_load_message__: Do not publish as loaned message when publishing a client message. Defaults to `true`.
+ * (ROS 2) __topic_throttle_rates__: List of rates to throttle corresponding (matching index) patterns by. Represents messages per second. If not provided nothing will be throttled. Must have same length as __topic_throttle_patterns__.
+ * (ROS 2) __topic_throttle_patterns__: List of regex patterns to throttle by corresponding rate (matching index) If not provided nothing will be throttled. Must have the same length as __topic_throttle_rates__.
+ * (ROS 2) __min_qos_topic_patterns__: List of regex patterns to use corresponding min qos depth for (matching index). If not provided all topics will use __min_qos_depth__. Must have the same length as __min_qos_topic_depths__.
+ * (ROS 2) __min_qos_topic_depths__: List of depths to use on corresponding min qos pattern (matching index). If not provided all topics will use __min_qos_depth__. Must have the same length as __min_qos_topic_patterns__.
 
 #### Running in a bandwidth-constrained environment
 When running the foxglove bridge in a bandwidth constrained environment, messages may queue up in the `send_buffer` resulting in dropped messages. In order to control which messages are dropped, `best_effort_qos_topic_whitelist` can be used to force some topics to be "best_effort" rather than reliable. This can be used in conjunction with a high `send_buffer_limit` (for reliable messages) and a lower `best_effort_qos_send_buffer_limit` to ensure `best_effort` messages are dropped first.
