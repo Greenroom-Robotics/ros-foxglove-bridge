@@ -609,7 +609,7 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
     if (_messageThrottler) {
-      _messageThrottler.value().eraseTopic(channel.topic, channelId);
+      _messageThrottler.value().eraseTopic(channel.topic);
     }
   } else {
     RCLCPP_INFO(this->get_logger(),
@@ -1005,6 +1005,7 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
   if (!_messageThrottler) {
     return false;
   }
+
 
   return _messageThrottler.value().shouldThrottle(topic, serializedMsg, now);
 }

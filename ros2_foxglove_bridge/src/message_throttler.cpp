@@ -1,4 +1,5 @@
 #include <foxglove_bridge/message_throttler.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 namespace foxglove_bridge {
 
@@ -191,13 +192,11 @@ std::optional<Nanoseconds> MessageThrottleManager::getTopicThrottleInterval(
   return std::nullopt;
 }
 
-void MessageThrottleManager::eraseTopic(const TopicName& topic,
-                                        const foxglove::ChannelId& channelId) {
+void MessageThrottleManager::eraseTopic(const TopicName& topic) {
   std::unique_lock<std::shared_mutex> lock(_topicInfoLock);
   const auto topicInfoIt = _throttledTopics.find(topic);
   if (topicInfoIt == _throttledTopics.end()) {
-    throw foxglove::ChannelError(
-      channelId, "Received unsubscribe request (to message throttler) for unknown topic " + topic);
+    return;
   }
   _throttledTopics.erase(topicInfoIt);
 }
