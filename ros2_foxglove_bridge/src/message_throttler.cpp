@@ -1,5 +1,4 @@
 #include <foxglove_bridge/message_throttler.hpp>
-#include <rclcpp/rclcpp.hpp>
 
 namespace foxglove_bridge {
 

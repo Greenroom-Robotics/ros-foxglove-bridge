@@ -1006,7 +1006,6 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
     return false;
   }
 
-
   return _messageThrottler.value().shouldThrottle(topic, serializedMsg, now);
 }
 
