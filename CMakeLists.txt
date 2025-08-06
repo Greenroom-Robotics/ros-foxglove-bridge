@@ -172,6 +172,9 @@ elseif("$ENV{ROS_VERSION}" STREQUAL "2")
     )
     ament_target_dependencies(foxglove_bridge_component ament_index_cpp rclcpp rclcpp_components resource_retriever rosgraph_msgs rosx_introspection)
     target_link_libraries(foxglove_bridge_component foxglove_bridge_base)
+    
+    # Add rclcpp dependencies to foxglove_bridge_base since websocket_server.hpp uses RCLCPP_INFO
+    ament_target_dependencies(foxglove_bridge_base rclcpp)
     rclcpp_components_register_nodes(foxglove_bridge_component "foxglove_bridge::FoxgloveBridge")
     enable_strict_compiler_warnings(foxglove_bridge_component)
     add_executable(foxglove_bridge

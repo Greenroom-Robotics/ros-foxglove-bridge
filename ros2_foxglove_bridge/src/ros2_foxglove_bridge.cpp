@@ -897,7 +897,14 @@ void FoxgloveBridge::rosMessageHandler(const foxglove::ChannelId& channelId,
   auto bestEffort = qos.reliability() == rclcpp::ReliabilityPolicy::BestEffort;
 
   if (shouldThrottle(topicName, rclSerializedMsg, timestamp)) {
+    if (topicName == "/vessel_1/geopose") {
+      RCLCPP_INFO(rclcpp::get_logger("message_throttler"), "throttling");
+    }
     return;
+  }
+
+  if (topicName == "/vessel_1/geopose") {
+    RCLCPP_INFO(rclcpp::get_logger("message_throttler"), "letting through");
   }
 
   _server->sendMessage(clientHandle, channelId, static_cast<uint64_t>(timestamp),

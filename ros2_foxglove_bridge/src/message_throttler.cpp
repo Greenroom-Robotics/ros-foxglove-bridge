@@ -2,6 +2,27 @@
 
 namespace foxglove_bridge {
 
+std::string nanoseconds_to_ampm(long nanoseconds_since_epoch) {
+  // Convert to seconds with decimal precision
+  double total_seconds = static_cast<double>(nanoseconds_since_epoch) / NANOSECONDS_IN_SECOND;
+
+  // Get whole seconds for time_t
+  time_t seconds = static_cast<time_t>(total_seconds);
+
+  // Get decimal part
+  double decimal_part = total_seconds - seconds;
+
+  // Convert to local time
+  struct tm* local_time = localtime(&seconds);
+
+  // Format with AM/PM
+  std::ostringstream oss;
+  oss << std::put_time(local_time, "%I:%M:%S") << std::fixed << std::setprecision(3) << decimal_part
+      << " " << std::put_time(local_time, "%p");
+
+  return oss.str();
+}
+
 ThrottledMessage::ThrottledMessage(ThrottledTopicInfo* topicInfo,
                                    const rcl_serialized_message_t& serializedMsg)
     : _topicInfo(topicInfo)
@@ -52,6 +73,10 @@ bool ThrottledMessage::isAllowedThrough(Nanoseconds currentTime) {
 
 void ThrottledMessage::updateLastSeen(Nanoseconds currentTime) {
   std::unique_lock<std::shared_mutex> lock(_topicInfo->frameIdLastRecievedLock);
+  if (_topicInfo->topic == "/vessel_1/geopose") {
+    RCLCPP_INFO(rclcpp::get_logger("message_throttler"), "updating last seen: %s",
+                nanoseconds_to_ampm(currentTime).c_str());
+  }
   _topicInfo->frameIdLastReceived[_frameid] = currentTime;
 }
 
@@ -99,10 +124,11 @@ std::optional<std::shared_ptr<RosMsgParser::Parser>> MessageThrottleManager::cre
 
 bool MessageThrottleManager::shouldThrottleAndUpdate(ThrottledMessage& msg,
                                                      const Nanoseconds time) {
+  // TODO: this should hold a lock the whole time
   if (!msg.isAllowedThrough(time)) {
     return true;
   }
-
+  // or recheck down here
   msg.updateLastSeen(time);
   return false;
 }

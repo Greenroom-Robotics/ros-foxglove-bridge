@@ -14,6 +14,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <rclcpp/rclcpp.hpp>
+
 #include <nlohmann/json.hpp>
 #include <websocketpp/config/asio.hpp>
 #include <websocketpp/server.hpp>
@@ -970,6 +972,7 @@ inline void Server<ServerConfiguration>::sendMessage(ConnHandle clientHandle, Ch
   if (ec || !con) {
     return;
   }
+  RCLCPP_INFO(rclcpp::get_logger("message_throttler"), "we have a connection!");
 
   const auto bufferSizeinBytes = con->get_buffered_amount();
   // There are 2 different buffer limits to consider, one for "best_effort" and one for "reliable"
