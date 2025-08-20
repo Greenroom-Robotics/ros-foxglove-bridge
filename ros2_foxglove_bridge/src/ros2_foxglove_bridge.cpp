@@ -608,7 +608,7 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
     if (throttlingEnabled()) {
-      getThrottlerByClient(clientHandle)->eraseTopic(channel.topic);
+      getThrottlerByClient(clientHandle).eraseTopic(channel.topic);
     }
   } else {
     RCLCPP_INFO(this->get_logger(),
@@ -997,10 +997,10 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
     return false;
   }
 
-  return getThrottlerByClient(client)->shouldThrottle(topic, serializedMsg, now);
+  return getThrottlerByClient(client).shouldThrottle(topic, serializedMsg, now);
 }
 
-MessageThrottleManager *FoxgloveBridge::getThrottlerByClient(
+MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(
   const ConnectionHandle& client) {
   if (!_messageThrottlers.count(client)) {
     _messageThrottlers.emplace(std::piecewise_construct,
@@ -1009,7 +1009,7 @@ MessageThrottleManager *FoxgloveBridge::getThrottlerByClient(
   }
 
   auto it = _messageThrottlers.find(client);
-  return &it->second;
+  return it->second;
 }
 
 bool FoxgloveBridge::throttlingEnabled() {
