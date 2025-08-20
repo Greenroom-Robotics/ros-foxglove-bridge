@@ -106,7 +106,8 @@ private:
   std::unique_ptr<foxglove::CallbackQueue> _fetchAssetQueue;
   std::unordered_map<std::string, std::shared_ptr<RosMsgParser::Parser>> _jsonParsers;
   std::atomic<bool> _shuttingDown = false;
-  std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash, ConnectionHdlEqual>
+  std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash,
+                     ConnectionHdlEqual>
     _messageThrottlers;
 
   void subscribeConnectionGraph(bool subscribe);

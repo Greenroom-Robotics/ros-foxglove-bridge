@@ -1,5 +1,5 @@
-#include <unordered_set>
 #include <tuple>
+#include <unordered_set>
 
 #include <resource_retriever/retriever.hpp>
 #include <rosx_introspection/builtin_types.hpp>
@@ -1000,12 +1000,11 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
   return getThrottlerByClient(client).shouldThrottle(topic, serializedMsg, now);
 }
 
-MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(
-  const ConnectionHandle& client) {
+MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHandle& client) {
   if (!_messageThrottlers.count(client)) {
-    _messageThrottlers.emplace(std::piecewise_construct,
-                               std::forward_as_tuple(client),
-                               std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
+    _messageThrottlers.emplace(
+      std::piecewise_construct, std::forward_as_tuple(client),
+      std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
   }
 
   auto it = _messageThrottlers.find(client);
