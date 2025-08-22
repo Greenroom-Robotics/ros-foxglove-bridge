@@ -1007,8 +1007,7 @@ MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHan
       std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
   }
 
-  auto it = _messageThrottlers.find(client);
-  return it->second;
+  return _messageThrottlers.find(client)->second;
 }
 
 bool FoxgloveBridge::throttlingEnabled() {
