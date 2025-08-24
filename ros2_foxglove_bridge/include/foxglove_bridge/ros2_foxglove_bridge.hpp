@@ -60,6 +60,18 @@ private:
     }
   };
 
+  struct ConnectionHdlHash {
+    std::size_t operator()(const ConnectionHandle& hdl) const {
+      return std::hash<void*>()(hdl.lock().get());
+    }
+  };
+
+  struct ConnectionHdlEqual {
+    bool operator()(const ConnectionHandle& lhs, const ConnectionHandle& rhs) const {
+      return lhs.lock() == rhs.lock();
+    }
+  };
+
   std::unique_ptr<foxglove::ServerInterface<ConnectionHandle>> _server;
   foxglove::MessageDefinitionCache _messageDefinitionCache;
   std::vector<std::regex> _topicWhitelistPatterns;
@@ -94,7 +106,9 @@ private:
   std::unique_ptr<foxglove::CallbackQueue> _fetchAssetQueue;
   std::unordered_map<std::string, std::shared_ptr<RosMsgParser::Parser>> _jsonParsers;
   std::atomic<bool> _shuttingDown = false;
-  std::optional<MessageThrottleManager> _messageThrottler;
+  std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash,
+                     ConnectionHdlEqual>
+    _messageThrottlers;
 
   void subscribeConnectionGraph(bool subscribe);
 
@@ -131,10 +145,12 @@ private:
 
   bool hasCapability(const std::string& capability);
 
-  void initializeThrottler();
-
   bool shouldThrottle(const TopicName& topic, const rcl_serialized_message_t& serializedMsg,
-                      const Nanoseconds now);
+                      const Nanoseconds now, const ConnectionHandle& client);
+
+  MessageThrottleManager& getThrottlerByClient(const ConnectionHandle& client);
+
+  bool throttlingEnabled();
 
   size_t getTopicMinQosDepth(const TopicName& topic);
 };

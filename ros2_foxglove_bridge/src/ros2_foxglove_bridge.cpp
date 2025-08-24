@@ -1,3 +1,4 @@
+#include <tuple>
 #include <unordered_set>
 
 #include <resource_retriever/retriever.hpp>
@@ -157,8 +158,6 @@ FoxgloveBridge::FoxgloveBridge(const rclcpp::NodeOptions& options)
         _server->broadcastTime(static_cast<uint64_t>(timestamp));
       });
   }
-
-  initializeThrottler();
 }
 
 FoxgloveBridge::~FoxgloveBridge() {
@@ -608,8 +607,8 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
     RCLCPP_INFO(this->get_logger(), "Unsubscribing from topic \"%s\" (%s) on channel %d",
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
-    if (_messageThrottler) {
-      _messageThrottler.value().eraseTopic(channel.topic);
+    if (throttlingEnabled()) {
+      getThrottlerByClient(clientHandle).eraseTopic(channel.topic);
     }
   } else {
     RCLCPP_INFO(this->get_logger(),
@@ -896,7 +895,7 @@ void FoxgloveBridge::rosMessageHandler(const foxglove::ChannelId& channelId,
   const auto rclSerializedMsg = msg->get_rcl_serialized_message();
   auto bestEffort = qos.reliability() == rclcpp::ReliabilityPolicy::BestEffort;
 
-  if (shouldThrottle(topicName, rclSerializedMsg, timestamp)) {
+  if (shouldThrottle(topicName, rclSerializedMsg, timestamp, clientHandle)) {
     return;
   }
 
@@ -991,22 +990,28 @@ bool FoxgloveBridge::hasCapability(const std::string& capability) {
   return std::find(_capabilities.begin(), _capabilities.end(), capability) != _capabilities.end();
 }
 
-void FoxgloveBridge::initializeThrottler() {
-  if (!_topicThrottlePatterns.size()) {
-    return;
-  }
-
-  _messageThrottler.emplace(_server.get(), _topicThrottleRates, _topicThrottlePatterns);
-}
-
 bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
                                     const rcl_serialized_message_t& serializedMsg,
-                                    const Nanoseconds now) {
-  if (!_messageThrottler) {
+                                    const Nanoseconds now, const ConnectionHandle& client) {
+  if (!throttlingEnabled()) {
     return false;
   }
 
-  return _messageThrottler.value().shouldThrottle(topic, serializedMsg, now);
+  return getThrottlerByClient(client).shouldThrottle(topic, serializedMsg, now);
+}
+
+MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHandle& client) {
+  if (!_messageThrottlers.count(client)) {
+    _messageThrottlers.emplace(
+      std::piecewise_construct, std::forward_as_tuple(client),
+      std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
+  }
+
+  return _messageThrottlers.find(client)->second;
+}
+
+bool FoxgloveBridge::throttlingEnabled() {
+  return _topicThrottlePatterns.size();
 }
 
 size_t FoxgloveBridge::getTopicMinQosDepth(const TopicName& topic) {
