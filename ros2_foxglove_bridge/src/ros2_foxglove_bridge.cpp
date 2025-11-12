@@ -1,6 +1,8 @@
+#include <mutex>
 #include <tuple>
 #include <unordered_set>
 
+#include <rclcpp/logging.hpp>
 #include <resource_retriever/retriever.hpp>
 #include <rosx_introspection/builtin_types.hpp>
 
@@ -8,6 +10,8 @@
 
 namespace foxglove_bridge {
 namespace {
+constexpr size_t WARN_DISCONNECTED_CLIENT_SIZE = 10000;
+
 inline bool isHiddenTopicOrService(const std::string& name) {
   if (name.empty()) {
     throw std::invalid_argument("Topic or service name can't be empty");
@@ -749,6 +753,12 @@ void FoxgloveBridge::clientUnadvertise(foxglove::ChannelId channelId, Connection
     _clientAdvertisedTopics.erase(it);
   }
 
+  if (throttlingEnabled()) {
+    _cleanupTimer = this->create_wall_timer(30s, [this]() {
+      cleanupExpiredClients();
+    });
+  }
+
   // Create a timer that immedeately goes out of scope (so it never fires) which will trigger
   // the previously destroyed publisher to be cleaned up. This is a workaround for
   // https://github.com/ros2/rclcpp/issues/2146
@@ -1014,19 +1024,31 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
 }
 
 MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHandle& client) {
-  std::lock_guard<std::mutex> lock(_messageThrottlersMutex);
+  {
+    // optimisitcally acquire a shared lock incase we don't need to create a new throttler
+    std::shared_lock<std::shared_mutex> lock(_messageThrottlersMutex);
+    // get a strong reference to the client handle, make sure it lives this entire function
+    auto shared_client = client.lock();
 
-  // Check if client has been marked as disconnected
-  if (_disconnectedClients.count(client)) {
-    throw std::runtime_error("Client has disconnected");
-  }
+    // Validate the connection handle is still valid
+    if (shared_client == nullptr) {
+      throw std::runtime_error("Cannot access throttler for expired client connection");
+    }
 
-  // Validate the connection handle is still valid
-  if (!client.lock()) {
-    throw std::runtime_error("Cannot access throttler for expired client connection");
-  }
+    // Check if client has been marked as disconnected
+    if (_disconnectedClients.count(client)) {
+      throw std::runtime_error("Client has disconnected");
+    }
 
-  if (!_messageThrottlers.count(client)) {
+    if (_messageThrottlers.count(client) > 0) {
+      return _messageThrottlers.find(client)->second;
+    }
+  }  // drop shared lock
+
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
+
+  // make sure throttler wasn't created while we were waiting for the exclusive lock
+  if (_messageThrottlers.count(client) == 0) {
     _messageThrottlers.emplace(
       std::piecewise_construct, std::forward_as_tuple(client),
       std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
@@ -1044,29 +1066,32 @@ void FoxgloveBridge::handleClientDisconnect(ConnectionHandle clientHandle) {
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(_messageThrottlersMutex);
-    // Mark client as disconnected FIRST to prevent new throttler creation from queued messages
-    _disconnectedClients.insert(clientHandle);
-    // Then remove existing throttler
-    _messageThrottlers.erase(clientHandle);
-  }
-
-  // Clean up expired handles now that lock is released
-  cleanupExpiredClients();
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
+  // Mark client as disconnected FIRST to prevent new throttler creation from queued messages
+  _disconnectedClients.insert(clientHandle);
+  // Then remove existing throttler
+  _messageThrottlers.erase(clientHandle);
 }
 
 void FoxgloveBridge::cleanupExpiredClients() {
-  std::lock_guard<std::mutex> lock(_messageThrottlersMutex);
-
-  // Collect expired handles
   std::vector<ConnectionHandle> expiredHandles;
-  for (const auto& clientHandle : _disconnectedClients) {
-    if (!clientHandle.lock()) {
-      // Handle has expired - connection fully destroyed
-      expiredHandles.push_back(clientHandle);
+  {
+    std::shared_lock<std::shared_mutex> lock(_messageThrottlersMutex);
+
+    // Collect expired handles
+    for (const auto& clientHandle : _disconnectedClients) {
+      if (!clientHandle.lock()) {
+        // Handle has expired - connection fully destroyed
+        expiredHandles.push_back(clientHandle);
+      }
+    }
+
+    if (expiredHandles.empty()) {
+      return;
     }
   }
+
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
 
   // Remove expired handles
   for (const auto& handle : expiredHandles) {
@@ -1074,8 +1099,17 @@ void FoxgloveBridge::cleanupExpiredClients() {
   }
 
   if (!expiredHandles.empty()) {
-    RCLCPP_DEBUG(this->get_logger(),
-                 "Cleaned up %zu expired client handle(s)", expiredHandles.size());
+    RCLCPP_DEBUG(this->get_logger(), "Cleaned up %zu expired client handle(s)",
+                 expiredHandles.size());
+  }
+
+  if (_disconnectedClients.size() > WARN_DISCONNECTED_CLIENT_SIZE) {
+    // the actual mem footprint required to store these is miniscule, but if they are stacking up
+    // then we are not cleaning up properly
+    RCLCPP_WARN(this->get_logger(),
+              "There are still %zu disconnected client handles remaining. This may indicate cleanup"
+              "failing",
+              _disconnectedClients.size());
   }
 }
 

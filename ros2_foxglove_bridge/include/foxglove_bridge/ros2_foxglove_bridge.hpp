@@ -106,11 +106,12 @@ private:
   std::unique_ptr<foxglove::CallbackQueue> _fetchAssetQueue;
   std::unordered_map<std::string, std::shared_ptr<RosMsgParser::Parser>> _jsonParsers;
   std::atomic<bool> _shuttingDown = false;
-  std::mutex _messageThrottlersMutex;
+  std::shared_mutex _messageThrottlersMutex;
   std::unordered_set<ConnectionHandle, ConnectionHdlHash, ConnectionHdlEqual> _disconnectedClients;
   std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash,
                      ConnectionHdlEqual>
     _messageThrottlers;
+  rclcpp::TimerBase::SharedPtr _cleanupTimer;
 
   void subscribeConnectionGraph(bool subscribe);
 
