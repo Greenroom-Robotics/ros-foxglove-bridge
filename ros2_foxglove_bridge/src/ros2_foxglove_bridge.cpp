@@ -607,7 +607,7 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
     RCLCPP_INFO(this->get_logger(), "Unsubscribing from topic \"%s\" (%s) on channel %d",
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
-    if (throttlingEnabled()) {
+    if (throttlingEnabled() && !_shuttingDown) {
       getThrottlerByClient(clientHandle).eraseTopic(channel.topic);
     }
   } else {
