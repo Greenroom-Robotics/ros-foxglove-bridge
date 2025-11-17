@@ -108,7 +108,7 @@ private:
   std::atomic<bool> _shuttingDown = false;
   std::shared_mutex _messageThrottlersMutex;
   std::unordered_set<ConnectionHandle, ConnectionHdlHash, ConnectionHdlEqual> _disconnectedClients;
-  std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash,
+  std::unordered_map<ConnectionHandle, std::shared_ptr<MessageThrottleManager>, ConnectionHdlHash,
                      ConnectionHdlEqual>
     _messageThrottlers;
   rclcpp::TimerBase::SharedPtr _cleanupTimer;
@@ -151,7 +151,7 @@ private:
   bool shouldThrottle(const TopicName& topic, const rcl_serialized_message_t& serializedMsg,
                       const Nanoseconds now, const ConnectionHandle& client);
 
-  MessageThrottleManager& getThrottlerByClient(const ConnectionHandle& client);
+  std::shared_ptr<MessageThrottleManager> getThrottlerByClient(const ConnectionHandle& client);
 
   bool throttlingEnabled();
 

@@ -1,4 +1,5 @@
 #include <mutex>
+#include <shared_mutex>
 #include <tuple>
 #include <unordered_set>
 
@@ -137,6 +138,12 @@ FoxgloveBridge::FoxgloveBridge(const rclcpp::NodeOptions& options)
 
   _server->setHandlers(std::move(hdlrs));
   _server->start(address, port);
+
+  // Periodic cleanup for disconnected client handles
+  if (throttlingEnabled()) {
+    _cleanupTimer = this->create_wall_timer(
+      std::chrono::seconds(30), std::bind(&FoxgloveBridge::cleanupExpiredClients, this));
+  }
 
   // Get the actual port we bound to
   uint16_t listeningPort = _server->getPort();
@@ -615,7 +622,8 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
     _subscriptions.erase(subscriptionsIt);
     if (throttlingEnabled() && !_shuttingDown) {
       try {
-        getThrottlerByClient(clientHandle).eraseTopic(channel.topic);
+        auto throttler = getThrottlerByClient(clientHandle);
+        throttler->eraseTopic(channel.topic);
       } catch (const std::runtime_error&) {
         // Client handle expired during disconnect - expected behavior
         // Throttler already cleaned up by handleClientDisconnect
@@ -751,12 +759,6 @@ void FoxgloveBridge::clientUnadvertise(foxglove::ChannelId channelId, Connection
   clientPublications.erase(it2);
   if (clientPublications.empty()) {
     _clientAdvertisedTopics.erase(it);
-  }
-
-  if (throttlingEnabled()) {
-    _cleanupTimer = this->create_wall_timer(30s, [this]() {
-      cleanupExpiredClients();
-    });
   }
 
   // Create a timer that immedeately goes out of scope (so it never fires) which will trigger
@@ -1015,7 +1017,8 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
   }
 
   try {
-    return getThrottlerByClient(client).shouldThrottle(topic, serializedMsg, now);
+    auto throttler = getThrottlerByClient(client);
+    return throttler->shouldThrottle(topic, serializedMsg, now);
   } catch (const std::runtime_error&) {
     // Client disconnected or handle expired - don't throttle
     // Message will be dropped elsewhere when sendMessage fails
@@ -1023,7 +1026,8 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
   }
 }
 
-MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHandle& client) {
+std::shared_ptr<MessageThrottleManager> FoxgloveBridge::getThrottlerByClient(
+  const ConnectionHandle& client) {
   {
     // optimisitcally acquire a shared lock incase we don't need to create a new throttler
     std::shared_lock<std::shared_mutex> lock(_messageThrottlersMutex);
@@ -1040,21 +1044,24 @@ MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHan
       throw std::runtime_error("Client has disconnected");
     }
 
-    if (_messageThrottlers.count(client) > 0) {
-      return _messageThrottlers.find(client)->second;
+    auto it = _messageThrottlers.find(client);
+    if (it != _messageThrottlers.end()) {
+      return it->second;
     }
   }  // drop shared lock
 
   std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
 
   // make sure throttler wasn't created while we were waiting for the exclusive lock
-  if (_messageThrottlers.count(client) == 0) {
-    _messageThrottlers.emplace(
-      std::piecewise_construct, std::forward_as_tuple(client),
-      std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
+  auto it = _messageThrottlers.find(client);
+  if (it == _messageThrottlers.end()) {
+    auto throttler = std::make_shared<MessageThrottleManager>(_server.get(), _topicThrottleRates,
+                                                              _topicThrottlePatterns);
+    _messageThrottlers.emplace(client, throttler);
+    return throttler;
   }
 
-  return _messageThrottlers.find(client)->second;
+  return it->second;
 }
 
 bool FoxgloveBridge::throttlingEnabled() {
@@ -1106,10 +1113,11 @@ void FoxgloveBridge::cleanupExpiredClients() {
   if (_disconnectedClients.size() > WARN_DISCONNECTED_CLIENT_SIZE) {
     // the actual mem footprint required to store these is miniscule, but if they are stacking up
     // then we are not cleaning up properly
-    RCLCPP_WARN(this->get_logger(),
-              "There are still %zu disconnected client handles remaining. This may indicate cleanup"
-              "failing",
-              _disconnectedClients.size());
+    RCLCPP_WARN(
+      this->get_logger(),
+      "There are still %zu disconnected client handles remaining. This may indicate cleanup"
+      "failing",
+      _disconnectedClients.size());
   }
 }
 
