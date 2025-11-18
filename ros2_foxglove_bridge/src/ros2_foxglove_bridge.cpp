@@ -621,13 +621,12 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
     if (throttlingEnabled() && !_shuttingDown) {
-      try {
-        auto throttler = getThrottlerByClient(clientHandle);
-        throttler->eraseTopic(channel.topic);
-      } catch (const std::runtime_error&) {
-        // Client handle expired during disconnect - expected behavior
-        // Throttler already cleaned up by handleClientDisconnect
+      auto optThrottler = getThrottlerByClient(clientHandle);
+      if (optThrottler) {
+        (*optThrottler)->eraseTopic(channel.topic);
       }
+      // if !optThrottler, then Client handle expired during disconnect - expected behavior
+      // Throttler already cleaned up by handleClientDisconnect
     }
   } else {
     RCLCPP_INFO(this->get_logger(),
@@ -1016,17 +1015,17 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
     return false;
   }
 
-  try {
-    auto throttler = getThrottlerByClient(client);
-    return throttler->shouldThrottle(topic, serializedMsg, now);
-  } catch (const std::runtime_error&) {
+  auto optThrottler = getThrottlerByClient(client);
+  if (!optThrottler) {
     // Client disconnected or handle expired - don't throttle
     // Message will be dropped elsewhere when sendMessage fails
     return false;
   }
+
+  return (*optThrottler)->shouldThrottle(topic, serializedMsg, now);
 }
 
-std::shared_ptr<MessageThrottleManager> FoxgloveBridge::getThrottlerByClient(
+std::optional<std::shared_ptr<MessageThrottleManager>> FoxgloveBridge::getThrottlerByClient(
   const ConnectionHandle& client) {
   {
     // optimisitcally acquire a shared lock incase we don't need to create a new throttler
@@ -1036,12 +1035,12 @@ std::shared_ptr<MessageThrottleManager> FoxgloveBridge::getThrottlerByClient(
 
     // Validate the connection handle is still valid
     if (shared_client == nullptr) {
-      throw std::runtime_error("Cannot access throttler for expired client connection");
+      return std::nullopt;
     }
 
     // Check if client has been marked as disconnected
     if (_disconnectedClients.count(client)) {
-      throw std::runtime_error("Client has disconnected");
+      return std::nullopt;
     }
 
     auto it = _messageThrottlers.find(client);
@@ -1054,14 +1053,14 @@ std::shared_ptr<MessageThrottleManager> FoxgloveBridge::getThrottlerByClient(
 
   // make sure throttler wasn't created while we were waiting for the exclusive lock
   auto it = _messageThrottlers.find(client);
-  if (it == _messageThrottlers.end()) {
-    auto throttler = std::make_shared<MessageThrottleManager>(_server.get(), _topicThrottleRates,
-                                                              _topicThrottlePatterns);
-    _messageThrottlers.emplace(client, throttler);
-    return throttler;
+  if (it != _messageThrottlers.end()) {
+    return it->second;
   }
 
-  return it->second;
+  auto throttler = std::make_shared<MessageThrottleManager>(_server.get(), _topicThrottleRates,
+                                                            _topicThrottlePatterns);
+  _messageThrottlers.emplace(client, throttler);
+  return throttler;
 }
 
 bool FoxgloveBridge::throttlingEnabled() {

@@ -151,7 +151,7 @@ private:
   bool shouldThrottle(const TopicName& topic, const rcl_serialized_message_t& serializedMsg,
                       const Nanoseconds now, const ConnectionHandle& client);
 
-  std::shared_ptr<MessageThrottleManager> getThrottlerByClient(const ConnectionHandle& client);
+  std::optional<std::shared_ptr<MessageThrottleManager>> getThrottlerByClient(const ConnectionHandle& client);
 
   bool throttlingEnabled();
 
