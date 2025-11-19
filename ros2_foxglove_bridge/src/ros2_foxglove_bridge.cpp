@@ -1,6 +1,9 @@
+#include <mutex>
+#include <shared_mutex>
 #include <tuple>
 #include <unordered_set>
 
+#include <rclcpp/logging.hpp>
 #include <resource_retriever/retriever.hpp>
 #include <rosx_introspection/builtin_types.hpp>
 
@@ -8,6 +11,8 @@
 
 namespace foxglove_bridge {
 namespace {
+constexpr size_t WARN_DISCONNECTED_CLIENT_SIZE = 10000;
+
 inline bool isHiddenTopicOrService(const std::string& name) {
   if (name.empty()) {
     throw std::invalid_argument("Topic or service name can't be empty");
@@ -129,8 +134,16 @@ FoxgloveBridge::FoxgloveBridge(const rclcpp::NodeOptions& options)
     };
   }
 
+  hdlrs.clientDisconnectHandler = std::bind(&FoxgloveBridge::handleClientDisconnect, this, _1);
+
   _server->setHandlers(std::move(hdlrs));
   _server->start(address, port);
+
+  // Periodic cleanup for disconnected client handles
+  if (throttlingEnabled()) {
+    _cleanupTimer = this->create_wall_timer(
+      std::chrono::seconds(30), std::bind(&FoxgloveBridge::cleanupExpiredClients, this));
+  }
 
   // Get the actual port we bound to
   uint16_t listeningPort = _server->getPort();
@@ -608,7 +621,12 @@ void FoxgloveBridge::unsubscribe(foxglove::ChannelId channelId, ConnectionHandle
                 channel.topic.c_str(), channel.schemaName.c_str(), channelId);
     _subscriptions.erase(subscriptionsIt);
     if (throttlingEnabled() && !_shuttingDown) {
-      getThrottlerByClient(clientHandle).eraseTopic(channel.topic);
+      auto optThrottler = getThrottlerByClient(clientHandle);
+      if (optThrottler) {
+        (*optThrottler)->eraseTopic(channel.topic);
+      }
+      // if !optThrottler, then Client handle expired during disconnect - expected behavior
+      // Throttler already cleaned up by handleClientDisconnect
     }
   } else {
     RCLCPP_INFO(this->get_logger(),
@@ -997,21 +1015,109 @@ bool FoxgloveBridge::shouldThrottle(const TopicName& topic,
     return false;
   }
 
-  return getThrottlerByClient(client).shouldThrottle(topic, serializedMsg, now);
-}
-
-MessageThrottleManager& FoxgloveBridge::getThrottlerByClient(const ConnectionHandle& client) {
-  if (!_messageThrottlers.count(client)) {
-    _messageThrottlers.emplace(
-      std::piecewise_construct, std::forward_as_tuple(client),
-      std::forward_as_tuple(_server.get(), _topicThrottleRates, _topicThrottlePatterns));
+  auto optThrottler = getThrottlerByClient(client);
+  if (!optThrottler) {
+    // Client disconnected or handle expired - don't throttle
+    // Message will be dropped elsewhere when sendMessage fails
+    return false;
   }
 
-  return _messageThrottlers.find(client)->second;
+  return (*optThrottler)->shouldThrottle(topic, serializedMsg, now);
+}
+
+std::optional<std::shared_ptr<MessageThrottleManager>> FoxgloveBridge::getThrottlerByClient(
+  const ConnectionHandle& client) {
+  {
+    // optimisitcally acquire a shared lock incase we don't need to create a new throttler
+    std::shared_lock<std::shared_mutex> lock(_messageThrottlersMutex);
+    // get a strong reference to the client handle, make sure it lives this entire function
+    auto shared_client = client.lock();
+
+    // Validate the connection handle is still valid
+    if (shared_client == nullptr) {
+      return std::nullopt;
+    }
+
+    // Check if client has been marked as disconnected
+    if (_disconnectedClients.count(client)) {
+      return std::nullopt;
+    }
+
+    auto it = _messageThrottlers.find(client);
+    if (it != _messageThrottlers.end()) {
+      return it->second;
+    }
+  }  // drop shared lock
+
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
+
+  // make sure throttler wasn't created while we were waiting for the exclusive lock
+  auto it = _messageThrottlers.find(client);
+  if (it != _messageThrottlers.end()) {
+    return it->second;
+  }
+
+  auto throttler = std::make_shared<MessageThrottleManager>(_server.get(), _topicThrottleRates,
+                                                            _topicThrottlePatterns);
+  _messageThrottlers.emplace(client, throttler);
+  return throttler;
 }
 
 bool FoxgloveBridge::throttlingEnabled() {
   return _topicThrottlePatterns.size();
+}
+
+void FoxgloveBridge::handleClientDisconnect(ConnectionHandle clientHandle) {
+  if (!throttlingEnabled()) {
+    return;
+  }
+
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
+  // Mark client as disconnected FIRST to prevent new throttler creation from queued messages
+  _disconnectedClients.insert(clientHandle);
+  // Then remove existing throttler
+  _messageThrottlers.erase(clientHandle);
+}
+
+void FoxgloveBridge::cleanupExpiredClients() {
+  std::vector<ConnectionHandle> expiredHandles;
+  {
+    std::shared_lock<std::shared_mutex> lock(_messageThrottlersMutex);
+
+    // Collect expired handles
+    for (const auto& clientHandle : _disconnectedClients) {
+      if (!clientHandle.lock()) {
+        // Handle has expired - connection fully destroyed
+        expiredHandles.push_back(clientHandle);
+      }
+    }
+
+    if (expiredHandles.empty()) {
+      return;
+    }
+  }
+
+  std::lock_guard<std::shared_mutex> lock(_messageThrottlersMutex);
+
+  // Remove expired handles
+  for (const auto& handle : expiredHandles) {
+    _disconnectedClients.erase(handle);
+  }
+
+  if (!expiredHandles.empty()) {
+    RCLCPP_DEBUG(this->get_logger(), "Cleaned up %zu expired client handle(s)",
+                 expiredHandles.size());
+  }
+
+  if (_disconnectedClients.size() > WARN_DISCONNECTED_CLIENT_SIZE) {
+    // the actual mem footprint required to store these is miniscule, but if they are stacking up
+    // then we are not cleaning up properly
+    RCLCPP_WARN(
+      this->get_logger(),
+      "There are still %zu disconnected client handles remaining. This may indicate cleanup"
+      "failing",
+      _disconnectedClients.size());
+  }
 }
 
 size_t FoxgloveBridge::getTopicMinQosDepth(const TopicName& topic) {

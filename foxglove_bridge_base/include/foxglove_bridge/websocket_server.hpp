@@ -376,6 +376,18 @@ inline void Server<ServerConfiguration>::handleConnectionClosed(ConnHandle hdl) 
     _clients.erase(clientIt);
   }
 
+  // Notify about client disconnect for cleanup
+  if (_handlers.clientDisconnectHandler) {
+    try {
+      _handlers.clientDisconnectHandler(hdl);
+    } catch (const std::exception& ex) {
+      _server.get_elog().write(RECOVERABLE,
+                               "Exception in clientDisconnectHandler: " + std::string(ex.what()));
+    } catch (...) {
+      _server.get_elog().write(RECOVERABLE, "Exception in clientDisconnectHandler");
+    }
+  }
+
   // Unadvertise all channels this client advertised
   for (const auto clientChannelId : oldAdvertisedChannels) {
     _server.get_alog().write(APP, "Client " + clientName + " unadvertising channel " +

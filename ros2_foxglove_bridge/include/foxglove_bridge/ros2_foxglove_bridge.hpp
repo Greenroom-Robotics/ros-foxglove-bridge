@@ -106,9 +106,12 @@ private:
   std::unique_ptr<foxglove::CallbackQueue> _fetchAssetQueue;
   std::unordered_map<std::string, std::shared_ptr<RosMsgParser::Parser>> _jsonParsers;
   std::atomic<bool> _shuttingDown = false;
-  std::unordered_map<ConnectionHandle, MessageThrottleManager, ConnectionHdlHash,
+  std::shared_mutex _messageThrottlersMutex;
+  std::unordered_set<ConnectionHandle, ConnectionHdlHash, ConnectionHdlEqual> _disconnectedClients;
+  std::unordered_map<ConnectionHandle, std::shared_ptr<MessageThrottleManager>, ConnectionHdlHash,
                      ConnectionHdlEqual>
     _messageThrottlers;
+  rclcpp::TimerBase::SharedPtr _cleanupTimer;
 
   void subscribeConnectionGraph(bool subscribe);
 
@@ -148,11 +151,16 @@ private:
   bool shouldThrottle(const TopicName& topic, const rcl_serialized_message_t& serializedMsg,
                       const Nanoseconds now, const ConnectionHandle& client);
 
-  MessageThrottleManager& getThrottlerByClient(const ConnectionHandle& client);
+  std::optional<std::shared_ptr<MessageThrottleManager>> getThrottlerByClient(
+    const ConnectionHandle& client);
 
   bool throttlingEnabled();
 
   size_t getTopicMinQosDepth(const TopicName& topic);
+
+  void handleClientDisconnect(ConnectionHandle clientHandle);
+
+  void cleanupExpiredClients();
 };
 
 }  // namespace foxglove_bridge
