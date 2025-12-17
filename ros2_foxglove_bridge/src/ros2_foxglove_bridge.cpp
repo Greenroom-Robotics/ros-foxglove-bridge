@@ -988,11 +988,11 @@ void FoxgloveBridge::fetchAsset(const std::string& uri, uint32_t requestId,
     }
 
     resource_retriever::Retriever resource_retriever;
-    const resource_retriever::MemoryResource memoryResource = resource_retriever.get(uri);
+    const std::shared_ptr<resource_retriever::Resource> memoryResource = resource_retriever.get_shared(uri);
     response.status = foxglove::FetchAssetStatus::Success;
     response.errorMessage = "";
-    response.data.resize(memoryResource.size);
-    std::memcpy(response.data.data(), memoryResource.data.get(), memoryResource.size);
+    response.data.resize(memoryResource->data.size());
+    std::memcpy(response.data.data(), memoryResource->data.data(), memoryResource->data.size());
   } catch (const std::exception& ex) {
     RCLCPP_WARN(this->get_logger(), "Failed to retrieve asset '%s': %s", uri.c_str(), ex.what());
     response.status = foxglove::FetchAssetStatus::Error;
