@@ -70,6 +70,7 @@ jobs:
           changelog: false
           skip_build: false
           skip_tag: true
+          release_branches: main,jazzy
 
   release:
     name: Create Release
@@ -91,3 +92,4 @@ jobs:
           changelog: false
           skip_build: true
           skip_tag: false
+          release_branches: main,jazzy
