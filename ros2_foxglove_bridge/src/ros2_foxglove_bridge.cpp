@@ -988,12 +988,22 @@ void FoxgloveBridge::fetchAsset(const std::string& uri, uint32_t requestId,
     }
 
     resource_retriever::Retriever resource_retriever;
+
+#ifdef ROS_JAZZY
+    // we are in jazzy
+    const resource_retriever::MemoryResource memoryResource = resource_retriever.get(uri);
+    response.data.resize(memoryResource.size);
+    std::memcpy(response.data.data(), memoryResource.data.get(), memoryResource.size);
+#else
+    // we are in kilted
     const std::shared_ptr<resource_retriever::Resource> memoryResource =
       resource_retriever.get_shared(uri);
-    response.status = foxglove::FetchAssetStatus::Success;
-    response.errorMessage = "";
     response.data.resize(memoryResource->data.size());
     std::memcpy(response.data.data(), memoryResource->data.data(), memoryResource->data.size());
+#endif // ROS_JAZZY
+
+    response.status = foxglove::FetchAssetStatus::Success;
+    response.errorMessage = "";
   } catch (const std::exception& ex) {
     RCLCPP_WARN(this->get_logger(), "Failed to retrieve asset '%s': %s", uri.c_str(), ex.what());
     response.status = foxglove::FetchAssetStatus::Error;

@@ -24,6 +24,10 @@ macro(enable_strict_compiler_warnings target)
   endif()
 endmacro()
 
+if($ENV{ROS_DISTRO} STREQUAL "jazzy")
+  add_definitions(-DROS_JAZZY)
+endif()
+
 find_package(nlohmann_json QUIET)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
