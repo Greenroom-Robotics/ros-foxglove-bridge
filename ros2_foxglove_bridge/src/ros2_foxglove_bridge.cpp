@@ -988,7 +988,8 @@ void FoxgloveBridge::fetchAsset(const std::string& uri, uint32_t requestId,
     }
 
     resource_retriever::Retriever resource_retriever;
-    const std::shared_ptr<resource_retriever::Resource> memoryResource = resource_retriever.get_shared(uri);
+    const std::shared_ptr<resource_retriever::Resource> memoryResource =
+      resource_retriever.get_shared(uri);
     response.status = foxglove::FetchAssetStatus::Success;
     response.errorMessage = "";
     response.data.resize(memoryResource->data.size());
