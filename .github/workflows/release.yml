@@ -11,25 +11,41 @@ on:
           - foxglove_bridge
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      distros: ${{ steps.set-distros.outputs.distros }}
+    steps:
+      - id: set-distros
+        run: |
+          case "${{ github.ref_name }}" in
+            jazzy)
+              distros=("jazzy")
+              ;;
+            main)
+              distros=("kilted")
+              ;;
+            *)
+              echo "::error::Unsupported branch '${{ github.ref_name }}'. Releases can only be made from 'main' (kilted) or 'jazzy' branches."
+              exit 1
+              ;;
+          esac
+
+          echo "distros=$(jq -cn '$ARGS.positional' --args "${distros[@]}")" >> $GITHUB_OUTPUT
+
   build:
+    needs: setup
     strategy:
       fail-fast: true
       matrix:
+        ros_distro: ${{ fromJson(needs.setup.outputs.distros) }}
         job:
-          - runner: buildjet-2vcpu-ubuntu-2204
+          - runner: 2vcpu-ubuntu-2404
             arch: amd64
-            ros_distro: iron
-          - runner: buildjet-4vcpu-ubuntu-2204-arm
+          - runner: 4vcpu-ubuntu-2404-arm
             arch: arm64
-            ros_distro: iron
-          - runner: buildjet-2vcpu-ubuntu-2204
-            arch: amd64
-            ros_distro: jazzy
-          - runner: buildjet-4vcpu-ubuntu-2204-arm
-            arch: arm64
-            ros_distro: jazzy
 
-    name: Build - ${{ matrix.job.arch }} - ${{ matrix.job.ros_distro }}
+    name: Build - ${{ matrix.job.arch }} - ${{ matrix.ros_distro }}
     runs-on: ${{ matrix.job.runner }}
 
     steps:
@@ -42,12 +58,13 @@ jobs:
           token: ${{ secrets.API_TOKEN_GITHUB }}
           package: ${{ github.event.inputs.package }}
           arch: ${{ matrix.job.arch }}
-          ros_distro: ${{ matrix.job.ros_distro }}
+          ros_distro: ${{ matrix.ros_distro }}
           github_release: false
           public: true
           changelog: false
           skip_build: false
           skip_tag: true
+          release_branches: main,jazzy
 
   release:
     name: Create Release
@@ -69,3 +86,4 @@ jobs:
           changelog: false
           skip_build: true
           skip_tag: false
+          release_branches: main,jazzy
