@@ -989,18 +989,16 @@ void FoxgloveBridge::fetchAsset(const std::string& uri, uint32_t requestId,
 
     resource_retriever::Retriever resource_retriever;
 
-#ifdef ROS_JAZZY
-    // we are in jazzy
-    const resource_retriever::MemoryResource memoryResource = resource_retriever.get(uri);
-    response.data.resize(memoryResource.size);
-    std::memcpy(response.data.data(), memoryResource.data.get(), memoryResource.size);
-#else
-    // we are in kilted
+#ifdef ROS_KILTED
     const std::shared_ptr<resource_retriever::Resource> memoryResource =
       resource_retriever.get_shared(uri);
     response.data.resize(memoryResource->data.size());
     std::memcpy(response.data.data(), memoryResource->data.data(), memoryResource->data.size());
-#endif // ROS_JAZZY
+#else
+    const resource_retriever::MemoryResource memoryResource = resource_retriever.get(uri);
+    response.data.resize(memoryResource.size);
+    std::memcpy(response.data.data(), memoryResource.data.get(), memoryResource.size);
+#endif
 
     response.status = foxglove::FetchAssetStatus::Success;
     response.errorMessage = "";

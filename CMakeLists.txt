@@ -24,8 +24,8 @@ macro(enable_strict_compiler_warnings target)
   endif()
 endmacro()
 
-if($ENV{ROS_DISTRO} STREQUAL "jazzy")
-  add_definitions(-DROS_JAZZY)
+if($ENV{ROS_DISTRO} STREQUAL "kilted")
+  add_definitions(-DROS_KILTED)
 endif()
 
 find_package(nlohmann_json QUIET)
